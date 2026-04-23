@@ -6,11 +6,14 @@ import analyticsRouter from "./routes/analyticsRoutes.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import dotenv from "dotenv";
 import cors from "cors";
+import connectDB from "./config/db.js";
 
 dotenv.config();
 
 const app: Application = express();
 const PORT = process.env.PORT || 8000;
+
+await connectDB();
 
 const corsOptions = {
   origin: "*", // to be changed for frontend host later

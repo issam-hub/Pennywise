@@ -6,63 +6,61 @@ import {
 import type { NextFunction, Request, Response } from "express";
 import { asyncHandler, sendSuccess } from "../utils/responseHelpers.js";
 import { AppError } from "../middleware/errorHandler.js";
+import ExpenseModel from "../models/Expense.js";
+import UserModel from "../models/User.js";
 
-export let fakeExpenses: Expense[] = [
-  {
-    id: "1",
-    userId: "user123",
-    amount: 45.99,
-    category: ExpenseCategory.FOOD,
-    description: "Lunch at restaurant",
-    date: new Date("2025-10-15"),
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  },
-  {
-    id: "2",
-    userId: "user123",
-    amount: 20.0,
-    category: ExpenseCategory.TRANSPORT,
-    description: "Uber to work",
-    date: new Date("2025-10-14"),
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  },
-];
+// export let fakeExpenses: Expense[] = [
+//   {
+//     id: "1",
+//     userId: "user123",
+//     amount: 45.99,
+//     category: ExpenseCategory.FOOD,
+//     description: "Lunch at restaurant",
+//     date: new Date("2025-10-15"),
+//     createdAt: new Date(),
+//     updatedAt: new Date(),
+//   },
+//   {
+//     id: "2",
+//     userId: "user123",
+//     amount: 20.0,
+//     category: ExpenseCategory.TRANSPORT,
+//     description: "Uber to work",
+//     date: new Date("2025-10-14"),
+//     createdAt: new Date(),
+//     updatedAt: new Date(),
+//   },
+// ];
 
 export const getAllExpenses = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
-    const userExpenses = fakeExpenses.filter(
-      (exp) => exp.userId === req.userId,
-    );
-
     const { category, sort } = req.body;
 
-    let filteredExpenses = [...userExpenses];
+    const filter: { userId: string; category?: string } = {
+      userId: req.userId,
+    };
 
     if (category && typeof category === "string") {
-      filteredExpenses = filteredExpenses.filter(
-        (exp) => exp.category === category,
-      );
+      filter.category = category;
     }
+
+    let query = ExpenseModel.find(filter);
 
     if (sort && typeof sort === "string") {
       if (sort === "amount") {
-        filteredExpenses.sort((a, b) => a.amount - b.amount);
+        query = query.sort({ amount: 1 });
       } else if (sort === "-amount") {
-        filteredExpenses.sort((a, b) => b.amount - a.amount);
+        query = query.sort({ amount: -1 });
       } else if (sort === "date") {
-        filteredExpenses.sort(
-          (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-        );
+        query = query.sort({ date: 1 });
       } else if (sort === "-date") {
-        filteredExpenses.sort(
-          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-        );
+        query = query.sort({ date: -1 });
       }
     }
 
-    sendSuccess(res, filteredExpenses, "expenses returned successfully");
+    const expenses = await query;
+
+    sendSuccess(res, expenses, "expenses returned successfully");
   },
 );
 
@@ -70,12 +68,14 @@ export const getExpense = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
     const { id } = req.params;
 
-    const expense = fakeExpenses.find(
-      (exp) => exp.id === id && exp.userId === req.userId,
-    );
+    const expense = await ExpenseModel.findById(id);
 
     if (!expense) {
       throw new AppError("expense not found", 404);
+    }
+
+    if (expense.userId.toString() !== req.userId) {
+      throw new AppError("unauthorized access to this expense", 403);
     }
 
     sendSuccess(res, expense, "expense returned successfully");
@@ -86,20 +86,17 @@ export const createExpense = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
     const { amount, category, description, date } = req.body;
 
-    const expense: Expense = {
-      id: crypto.randomUUID(),
+    const expense = new UserModel({
       userId: req.userId,
       amount,
       category,
       description,
       date: date ? new Date(date) : new Date(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+    });
 
-    fakeExpenses.push(expense);
+    const createdExpense = await expense.save();
 
-    sendSuccess(res, expense, "expense created successfully", 201);
+    sendSuccess(res, createdExpense, "expense created successfully", 201);
   },
 );
 
@@ -108,24 +105,34 @@ export const updateExpense = asyncHandler(
     const { id } = req.params;
     const { amount, category, description, date } = req.body;
 
-    const expenseId = fakeExpenses.findIndex(
-      (exp) => exp.id === id && exp.userId === req.userId,
-    );
+    const expense = await ExpenseModel.findById(id);
 
-    if (expenseId === -1) {
+    if (!expense) {
       throw new AppError("expense not found", 404);
     }
 
-    fakeExpenses[expenseId] = {
-      ...fakeExpenses[expenseId],
-      amount: amount || fakeExpenses[expenseId]?.amount,
-      category: category || fakeExpenses[expenseId]?.category,
-      description: description || fakeExpenses[expenseId]?.description,
-      date: date ? new Date(date) : (fakeExpenses[expenseId] as Expense).date,
-      updatedAt: new Date(),
-    } as Expense;
+    if (expense.userId.toString() !== req.userId) {
+      throw new AppError("unauthorized access to this expense", 403);
+    }
 
-    sendSuccess(res, fakeExpenses[expenseId], "expense updated successfully");
+    if (amount !== undefined) {
+      expense.amount = amount;
+    }
+    if (category !== undefined) {
+      expense.category = category;
+    }
+
+    if (description !== undefined) {
+      expense.description = description;
+    }
+
+    if (date !== undefined) {
+      expense.date = new Date(date);
+    }
+
+    const updatedExpense = await expense.save();
+
+    sendSuccess(res, updatedExpense, "expense updated successfully");
   },
 );
 
@@ -133,15 +140,16 @@ export const deleteExpense = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
     const { id } = req.params;
 
-    const expenseId = fakeExpenses.findIndex(
-      (exp) => exp.id === id && exp.userId === req.userId,
-    );
-
-    if (expenseId === -1) {
-      throw new AppError("expense not found", 404);
+    const expense = await ExpenseModel.findById(id);
+    if (!expense) {
+      throw new AppError("user not found", 404);
     }
 
-    fakeExpenses.splice(expenseId, 1);
+    if (expense.userId.toString() !== req.userId) {
+      throw new AppError("unauthorized access to this expense", 403);
+    }
+
+    await ExpenseModel.findByIdAndDelete(id);
 
     sendSuccess(res, null, "expense deleted successfully");
   },

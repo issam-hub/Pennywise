@@ -1,26 +1,26 @@
 import { AppError } from "../middleware/errorHandler.js";
 import { asyncHandler, sendSuccess } from "../utils/responseHelpers.js";
 import type { NextFunction, Request, Response } from "express";
-import { fakeExpenses } from "./expenseControllers.js";
 import type {
   DashboardStats,
   Expense,
   ExpenseCategory,
   MonthtlyTotals,
 } from "../types/index.js";
+import ExpenseModel from "../models/Expense.js";
+import type { IExpense } from "../types/entities.js";
 
 export const getExpensesByCategories = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
-    const userExpenses = fakeExpenses.filter(
-      (expense) => expense.userId === req.userId,
-    );
+    const userExpenses = await ExpenseModel.find({ userId: req.userId });
 
     if (userExpenses.length === 0) {
-      throw new AppError("no expenses found for this user", 404);
+      sendSuccess(res, [], "no expenses found for this user");
+      return;
     }
 
     const categoryTotals = userExpenses.reduce(
-      (acc: any, expense: Expense) => {
+      (acc: any, expense: any) => {
         if (!acc[expense.category]) {
           acc[expense.category] = { total: 0, count: 0 };
         }
@@ -29,7 +29,7 @@ export const getExpensesByCategories = asyncHandler(
         acc[expense.category].count += 1;
         return acc;
       },
-      {} as Record<ExpenseCategory, { total: number; count: number }>,
+      {} as Record<string, { total: number; count: number }>,
     );
 
     const grandTotal = Object.values(categoryTotals).reduce(
@@ -75,17 +75,19 @@ export const getMonthlyTotals = asyncHandler(
       throw new AppError("year must be between 2000 and ${currentYear+1}", 400);
     }
 
-    const userExpenses = fakeExpenses.filter((exp) => {
+    const userExpenses = await ExpenseModel.find({ userId: req.userId });
+
+    const yearExpenses = userExpenses.filter((exp) => {
       const expenseYear = new Date(exp.date).getFullYear();
-      return exp.userId === req.userId && expenseYear === year;
+      return expenseYear === year;
     });
 
-    if (userExpenses.length === 0) {
+    if (yearExpenses.length === 0) {
       return sendSuccess(res, [], `no expenses found for ${year}`);
     }
 
-    const monthlyTotals = userExpenses.reduce(
-      (acc: any, exp: Expense) => {
+    const monthlyTotals = yearExpenses.reduce(
+      (acc: any, exp: any) => {
         const monthString = getMonthString(new Date(exp.date));
         if (!acc[monthString]) {
           acc[monthString] = {
@@ -119,9 +121,7 @@ export const getMonthlyTotals = asyncHandler(
 
 export const getDashboardStats = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
-    const userExpenses = fakeExpenses.filter(
-      (expense) => expense.userId === req.userId,
-    );
+    const userExpenses = await ExpenseModel.find({ userId: req.userId });
 
     if (userExpenses.length === 0) {
       sendSuccess(res, [], "no expenses found for this user");
@@ -174,8 +174,8 @@ export const getDashboardStats = asyncHandler(
       totalExpenses: Math.round(totalExpenses * 100) / 100,
       expenseCount: userExpenses.length,
       roundedAverageExpenseAmount: roundedAvg,
-      highestExpense: highestExpense as Expense,
-      lowestExpense: lowestExpense as Expense,
+      highestExpense: highestExpense as IExpense,
+      lowestExpense: lowestExpense as IExpense,
       currentMonthTotal: Math.round(currentMonthTotal * 100) / 100,
       lastMonthTotal: Math.round(lastMonthTotal * 100) / 100,
       monthlyChange,
@@ -187,9 +187,7 @@ export const getDashboardStats = asyncHandler(
 
 export const getSpendingTrends = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
-    const userExpenses = fakeExpenses.filter(
-      (expense) => expense.userId === req.userId,
-    );
+    const userExpenses = await ExpenseModel.find({ userId: req.userId });
 
     if (userExpenses.length === 0) {
       sendSuccess(res, [], "no expenses found for this user");

@@ -1,3 +1,5 @@
+import type { IExpense } from "./entities.js";
+
 export enum ExpenseCategory {
   FOOD = "food",
   TRANSPORT = "transport",
@@ -10,7 +12,7 @@ export enum ExpenseCategory {
 }
 
 export interface Expense {
-  id: string;
+  _id: string;
   userId: string;
   amount: number;
   category: ExpenseCategory;
@@ -21,7 +23,7 @@ export interface Expense {
 }
 
 export interface User {
-  id: string;
+  _id: string;
   name: string;
   email: string;
   password: string;
@@ -51,8 +53,8 @@ export interface DashboardStats {
   totalExpenses: number;
   expenseCount: number;
   roundedAverageExpenseAmount: number;
-  highestExpense: Expense;
-  lowestExpense: Expense;
+  highestExpense: IExpense;
+  lowestExpense: IExpense;
   currentMonthTotal: number;
   lastMonthTotal: number;
   monthlyChange: number;
