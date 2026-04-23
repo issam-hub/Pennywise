@@ -38,6 +38,11 @@ export const errorHandler = (
 
   if (err.name === "JsonWebTokenError") {
     statusCode = 401;
+    message = "invalid token. please log in again";
+  }
+
+  if (err.name === "TokenExpiredError") {
+    statusCode = 401;
     message = "your token has expired. please log in again";
   }
 

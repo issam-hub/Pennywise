@@ -3,6 +3,8 @@ import type { NextFunction, Request, Response } from "express";
 import { asyncHandler, sendSuccess } from "../utils/responseHelpers.js";
 import { AppError } from "../middleware/errorHandler.js";
 import UserModel from "../models/User.js";
+import bcrypt from "bcryptjs";
+import { generateToken } from "../utils/tokenHelpers.js";
 
 // let fakeUsers: User[] = [
 //   {
@@ -42,10 +44,13 @@ export const signup = asyncHandler(
       throw new AppError("email already exists", 400);
     }
 
+    const salt = await bcrypt.genSalt(10);
+    const hashPassword = await bcrypt.hash(password, salt);
+
     const newUser = new UserModel({
       name,
       email,
-      password,
+      password: hashPassword,
     });
 
     const savedUser = await newUser.save();
@@ -54,9 +59,11 @@ export const signup = asyncHandler(
 
     const { password: _, ...userWithoutPassword } = savedUserObj;
 
+    const token = generateToken(savedUserObj._id.toString());
+
     const authResponse: AuthResponse = {
       user: { ...userWithoutPassword, _id: savedUserObj._id.toString() },
-      token: "fake-jwt-token" + savedUserObj._id.toString(),
+      token,
     };
 
     sendSuccess(res, authResponse, "user signed up successfully", 201);
@@ -67,9 +74,14 @@ export const login = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
     const { email, password } = req.body;
 
-    const user = await UserModel.findOne({ email, password });
+    const user = await UserModel.findOne({ email });
 
     if (!user) {
+      throw new AppError("invalid email or password", 401);
+    }
+
+    const isValidPassword = await bcrypt.compare(password, user.password);
+    if (!isValidPassword) {
       throw new AppError("invalid email or password", 401);
     }
 
@@ -77,9 +89,11 @@ export const login = asyncHandler(
 
     const { password: _, ...userWithoutPassword } = userObj;
 
+    const token = generateToken(userObj._id.toString());
+
     const authResponse: AuthResponse = {
       user: { ...userWithoutPassword, _id: userObj._id.toString() },
-      token: "fake-jwt-token" + userObj._id.toString(),
+      token,
     };
 
     sendSuccess(res, authResponse, "user logged in successfully", 200);
@@ -143,5 +157,31 @@ export const updateProfile = asyncHandler(
       { ...userWithoutPassword, _id: req.userId },
       "profile updated successfully",
     );
+  },
+);
+
+export const updatePassword = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction) => {
+    const { oldPassword, newPassword } = req.body;
+
+    const user = await UserModel.findById(req.userId);
+
+    if (!user) {
+      throw new AppError("user not found", 404);
+    }
+
+    const isValidPassword = await bcrypt.compare(oldPassword, user.password);
+    if (!isValidPassword) {
+      throw new AppError("old password is invalid", 403);
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    user.password = hashedPassword;
+
+    await user.save();
+
+    sendSuccess(res, null, "password updated successfully");
   },
 );
